@@ -649,3 +649,111 @@ extension Trivia {
         return nil
     }
 }
+
+
+// MARK - used for cleanup
+
+final class CleanerVisitor: SyntaxVisitor {
+    let annotation: String
+    let pass: Int
+    let root: SourceFileSyntax
+    let path: String
+    let converter: SourceLocationConverter
+    let charset: CharacterSet
+    var usedTypes = [String]()
+    var protocolMap = [String: (annotated: Bool, parents: [String], docLoc: (Int, Int))]()
+    
+    init(annotation: String, path: String, root: SourceFileSyntax) {
+        self.annotation = annotation
+        self.path = path
+        self.root = root
+        self.converter = SourceLocationConverter(file: path, tree: root)
+        self.pass = annotation.isEmpty ? 1 : 0
+        self.charset = CharacterSet(arrayLiteral: "!", "?").union(.whitespaces)
+    }
+    
+    func reset() {
+        usedTypes.removeAll()
+        protocolMap.removeAll()
+    }
+
+    func visit(_ node: ReturnClauseSyntax) -> SyntaxVisitorContinueKind {
+        if pass == 0 {
+            let text = node.returnType.description.trimmingCharacters(in: .whitespaces)
+            if let _ = Type(text).defaultVal(with: nil, isInitParam: false) {
+            } else {
+                usedTypes.append(text)
+            }
+            return .visitChildren
+        }
+        return .skipChildren
+    }
+    
+    func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
+        if pass == 1 {
+            let text = node.identifier.text
+            let isType = text.first?.isUppercase ?? false
+            if isType, text.contains("Mock"), let typename = text.components(separatedBy: "Mock").first {
+                usedTypes.append(typename)
+            }
+        }
+        return .skipChildren
+    }
+    
+    func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+        var hasSubExprs = false
+        for v in node.bindings {
+            var vtype = ""
+            if let t1 = v.typeAnnotation {
+                vtype = t1.type.description.trimmingCharacters(in: .whitespaces)
+            } else if let t2 = v.initializer {
+                vtype = t2.value.description.trimmingCharacters(in: .whitespaces)
+                hasSubExprs = true
+            }
+            
+            if pass == 0 {
+                if let _ = Type(vtype).defaultVal(with: nil, isInitParam: false) {
+                } else if !hasSubExprs {
+                    // If no default val found, it's potentially used, so add it to used types
+                    usedTypes.append(vtype.trimmingCharacters(in: charset))
+                }
+            }
+        }
+        
+        return hasSubExprs ? .visitChildren : .skipChildren
+    }
+ 
+    func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+        if pass == 1 {
+            let mockClasses = node.inheritedTypes.filter{$0.hasSuffix("Mock")}
+            let used = mockClasses.compactMap {$0.components(separatedBy: "Mock").first}
+            usedTypes.append(contentsOf: used)
+        }
+        return .visitChildren
+    }
+    
+    func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+        if pass == 0 {
+            let metadata = node.annotationMetadata(with: annotation)
+            
+            if protocolMap[node.name] == nil {
+                protocolMap[node.name] = (false, [], (0, 0))
+            }
+            if metadata != nil {
+                protocolMap[node.name]?.annotated = true
+
+                let loc = node.startLocation(converter: converter)
+                if let l = loc.line, let c = loc.column {
+                    let pos = converter.position(ofLine: l, column: c)
+                    if let len = node.leadingTrivia?.sourceLength {
+                        let end = pos.utf8Offset
+                        let start = end - len.utf8Length
+                        protocolMap[node.name]?.docLoc = (start, end)
+                    }
+                }
+            }
+            protocolMap[node.name]?.parents.append(contentsOf: node.inheritedTypes)
+        }
+        return .visitChildren
+    }
+}

@@ -18,7 +18,7 @@ import Foundation
 import SwiftSyntax
 
 public class ParserViaSwiftSyntax: SourceParsing {
-    
+        
     public init() {}
     
     public func parseProcessedDecls(_ paths: [String],
@@ -79,6 +79,37 @@ public class ParserViaSwiftSyntax: SourceParsing {
             treeVisitor.reset()
             
             completion(results, [path: imports])
+        } catch {
+            fatalError(error.localizedDescription)
+        }
+    }
+    
+    
+    func scanUsedTypes(_ path: String,
+                       _ annotation: String,
+                        completion: @escaping ([String]) -> ()) {
+        
+        do {
+            let node = try SyntaxParser.parse(path)
+            var visitor = CleanerVisitor(annotation: annotation, path: path, root: node)
+            node.walk(&visitor)
+            completion(visitor.usedTypes)
+            visitor.reset()
+        } catch {
+            fatalError(error.localizedDescription)
+        }
+    }
+    
+    func scanMockableTypes(_ path: String,
+                   _ annotation: String,
+                   completion: @escaping ([String], [String: (annotated: Bool, parents: [String], docLoc: (Int, Int))]) -> ()) {
+        
+        do {
+            let node = try SyntaxParser.parse(path)
+            var visitor = CleanerVisitor(annotation: annotation, path: path, root: node)
+            node.walk(&visitor)
+            completion(visitor.usedTypes, visitor.protocolMap)
+//            visitor.reset()
         } catch {
             fatalError(error.localizedDescription)
         }
