@@ -267,7 +267,10 @@ extension Structure: EntityNode {
     var isClass: Bool {
         return kind == SwiftDeclarationKind.class.rawValue
     }
-    
+    var isExtension: Bool {
+        return kind == SwiftDeclarationKind.extension.rawValue
+    }
+
     var isVariable: Bool {
         return isStaticVariable || isInstanceVariable
     }

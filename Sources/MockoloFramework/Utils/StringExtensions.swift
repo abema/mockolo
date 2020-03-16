@@ -110,7 +110,37 @@ extension String {
         }
         return FileManager.default.currentDirectoryPath + "/" + path
     }
+
+    public var typeComponents: [String] {
+
+              if self.contains(",") ||
+            self.contains("(") ||
+            self.contains("[") ||
+            self.contains("<") ||
+            self.contains(".") ||
+            self.contains(":") ||
+            self.contains("?") ||
+            self.contains("!") ||
+            self.contains(")") ||
+            self.contains("]") ||
+            self.contains(">") ||
+            self.contains("{") ||
+            self.contains("}") ||
+            self.contains("=") {  // TODO: also filter out \"
+
+            let comps = components(separatedBy: charset).filter {$0.first?.isUppercase ?? false}.filter{!$0.isEmpty}.map{$0.trimmingCharacters(in: .whitespaces)}
+            return comps
+        }
+
+        if first?.isUppercase ?? false {
+            return [self]
+        }
+        return []
+    }
+
 }
+
+let charset = CharacterSet(charactersIn: ", .:()[]<>?!{}=")
 
 let separatorsForDisplay = CharacterSet(charactersIn: "<>[] :,()_-.&@#!{}@+\"\'")
 let separatorsForLiterals = CharacterSet(charactersIn: "?<>[] :,()_-.&@#!{}@+\"\'")
@@ -126,6 +156,10 @@ extension StringProtocol {
     
     func shouldParse(with exclusionList: [String]? = nil) -> Bool {
         guard hasSuffix(".swift") else { return false }
+        // TODO: add Objc and Legacy and Uber? 
+        if contains("samples") || contains("codelabs") || contains("apps/style-guide") || contains("Test") || (contains("Realtime") && contains("Models")) || contains("PropertyWrapper") || contains("PresidioUtilities/Performance") || contains("PresidioUtilities/Containers") || contains("PresidioUtilities/AssetFetching") {
+            return false
+        }
         guard let exlist = exclusionList else { return true }
         
         if let name = components(separatedBy: ".swift").first {
@@ -148,5 +182,5 @@ extension StringProtocol {
         let ret = self.replacingOccurrences(of: "?", with: "Optional")
         return ret.components(separatedBy: separatorsForDisplay)
     }
-    
+
 }

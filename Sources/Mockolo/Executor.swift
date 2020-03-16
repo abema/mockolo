@@ -120,13 +120,26 @@ class Executor {
     /// - parameter arguments: The command line arguments to execute the command with.
     func execute(with arguments: ArgumentParser.Result) {
         
-        let xlist = "Tests Test Images Strings Mock Mocks"
-        let root = "/Users/ellieshin/uber/mirror/ios/" //"/Users/ellieshin/uber/ios/" // /Users/ellie/uber/ios/"
-        let f1 = root + "libraries/feature/payment" //"libraries/feature/PresidioMaps/PresidioMaps/Marker/MapMarker.swift"
+        let xlist = "Images Strings Responses Mock Mocks Screen Screens main Services Service Fixtures Fixture Scene Model Models Exceptions Standin Standins".components(separatedBy: " ")
+        let xlist2 = "Images Strings Mock Mocks main Fixtures Fixture Scene Standin Standins".components(separatedBy: " ")
+        let root = "/Users/ellieshin/uber/ios" // "/Users/ellieshin/Developer/uber/ios" // "/Users/ellieshin/uber/mirror/ios/" //"/Users/ellieshin/uber/ios/" // /Users/ellie/uber/ios/"
+        let f1 = root + "/apps"
+        let f2 = root + "/libraries"
+        let dirs = [f1, f2]
+        let op = root + "/results"
 
-        cleanup(sourceDirs: [f1],
-                exclusionSuffixes: xlist.components(separatedBy: " "),
-                annotation: "@CreateMock")
+        let fdirs = ["/Users/ellieshin/Developer/scanner/Samples"]
+        let fop = "/Users/ellieshin/Developer/scanner/results"
+        let climit = 12
+
+        
+
+        dce(sourceDirs: dirs,
+            exclusionSuffixes: xlist,
+            exclusionSuffixesForUsed: xlist2,
+            outputFilePath: op,
+            concurrencyLimit: climit)
+
         return
 
         let cleanFlag = arguments.get(shouldClean)
@@ -137,12 +150,11 @@ class Executor {
         let annotation = arguments.get(self.annotation) ?? String.mockAnnotation
         
         let x = 0
-        if x > 0 {
-//            ribcleanup(sourceDirs: srcDirs,
-//                    exclusionSuffixes: exclusionSuffixes,
-//                    annotation: annotation,
-//                    outputFilePath: outputPath,
-//                    concurrencyLimit: concurrencyLimit)
+        if x == 0 {
+            dce(sourceDirs: srcDirs ?? [],
+                exclusionSuffixes: exclusionSuffixes,
+                outputFilePath: outputPath,
+                concurrencyLimit: concurrencyLimit)
         } else if let _ = cleanFlag {
             cleanup(sourceDirs: srcDirs,
                     exclusionSuffixes: exclusionSuffixes,
