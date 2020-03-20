@@ -225,7 +225,7 @@ public class ParserViaSourceKit: SourceParsing {
             var results = [String: Val]()
             let topstructure = try Structure(path: path)
             for current in topstructure.substructures {
-                if current.isClass, !current.name.hasPrefix("_"), !current.name.hasSuffix("Objc"), !current.name.contains("__VARIABLE_") {
+                if current.isProtocol, !current.name.hasPrefix("_"), !current.name.hasSuffix("Objc"), !current.name.contains("__VARIABLE_") {
                     if let attrs = current.attributeValues {
                         let hasobjc = attrs.filter{$0.contains("objc")}
                         if !hasobjc.isEmpty {
@@ -233,7 +233,7 @@ public class ParserViaSourceKit: SourceParsing {
                         }
                     }
 
-                    results[current.name] = Val(path: path, parents: current.inheritedTypes, offset: current.range.offset, length: current.range.length, used: false)
+                    results[current.name] = Val(path: path, parents: current.inheritedTypes, start: current.startOffset, end: current.endOffset, used: false)
                 }
             }
             
@@ -287,10 +287,11 @@ public class ParserViaSourceKit: SourceParsing {
             let topstructure = try Structure(path: path)
             for current in topstructure.substructures {
 
-                if current.isClass {
+                if current.isProtocol {
                     results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
                 } else if current.isExtension {
                     results.append(current.name)
+                    results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
                 }
 
                 // This handles members of class/extensions as well as unparsed items such as global decls, typealias rhs value, Type.self
@@ -332,8 +333,8 @@ public class ParserViaSourceKit: SourceParsing {
                 queue.async {
                     self.removeUnusedDecls(val.path,
                                            decl: decl,
-                                           offset: val.offset,
-                                           length: val.length,
+                                           start: val.start,
+                                           end: val.end,
                                            lock: lock,
                                            completion: completion)
                     semaphore?.signal()
@@ -349,21 +350,16 @@ public class ParserViaSourceKit: SourceParsing {
     let newline = UInt8(10)
     func removeUnusedDecls(_ path: String,
                            decl: String,
-                           offset: Int,
-                           length: Int,
+                           start: Int,
+                           end: Int,
                            lock: NSLock?,
                            completion: @escaping (Data, URL) -> ()) {
         guard var content = FileManager.default.contents(atPath: path) else {
             fatalError("Retrieving contents of \(path) failed")
         }
-
-        // TODO: remove from tests as well
-        let start = Int(offset)
-        let end = Int(offset + length)
-
-        let lineIdx = content[0..<start].lastIndex(of: newline) ?? start
-        let spaces = Data(repeating: space, count: end-lineIdx)
-        let range = lineIdx..<end
+        if content.isEmpty { return }
+        let spaces = Data(repeating: space, count: end-start)
+        let range = start..<end
         content.replaceSubrange(range, with: spaces)
 
         let url = URL(fileURLWithPath: path)
@@ -409,7 +405,7 @@ public class ParserViaSourceKit: SourceParsing {
             let topstructure = try Structure(path: filepath)
             var toRemove = [String]()
             for current in topstructure.substructures {
-                guard current.isClass else { continue }
+                guard current.isProtocol else { continue }
                 if unusedList.contains(current.name) {
                     toRemove.append(current.name)
                 }
@@ -426,7 +422,7 @@ public class ParserViaSourceKit: SourceParsing {
                      unusedMap: [String: Val],
                      queue: DispatchQueue?,
                      semaphore: DispatchSemaphore?,
-                     completion: @escaping (Data, URL, Bool) -> ()) {
+                     completion: @escaping (Data, URL, Int, Bool) -> ()) {
         if let queue = queue {
             let lock = NSLock()
             scanPaths(dirs) { filepath in
@@ -448,7 +444,7 @@ public class ParserViaSourceKit: SourceParsing {
     func updateTest(_ path: String,
                     unusedMap: [String: Val],
                     lock: NSLock?,
-                    completion: @escaping (Data, URL, Bool) -> ()) {
+                    completion: @escaping (Data, URL, Int, Bool) -> ()) {
 
         guard path.hasSuffix("Tests.swift") || path.hasSuffix("Test.swift") else { return }
 
@@ -458,34 +454,41 @@ public class ParserViaSourceKit: SourceParsing {
 
         do {
             let topstructure = try Structure(path: path)
-            var toDelete = [String: (Int64, Int64)]()
+            var toDelete = [String: (Int, Int)]()
             var deleteCount = 0
             var declsInFile = 0
             for current in topstructure.substructures {
                 guard current.isClass else { continue }
                 var testname = current.name
-                if testname.hasSuffix("Tests") {
+                if testname.hasSuffix("SnapshotTests") {
+                    testname = String(testname.dropLast("SnapshotTests".count))
+                    declsInFile += 1
+                } else if testname.hasSuffix("SnapshotTest") {
+                    testname = String(testname.dropLast("SnapshotTest".count))
+                    declsInFile += 1
+                } else if testname.hasSuffix("Tests") {
                     testname = String(testname.dropLast("Tests".count))
+                    declsInFile += 1
                 } else if testname.hasSuffix("Test") {
                     testname = String(testname.dropLast("Test".count))
+                    declsInFile += 1
                 }
-                declsInFile += 1
 
                 if let _ = unusedMap[testname] {
                     // 1. if it's the test name
                     //if v.path.module == path.module { // TODO: need this?
-                    toDelete[testname] = (current.range.offset, current.range.length)
+                    toDelete[testname] = (current.startOffset, current.endOffset)
                     deleteCount += 1
-                    print("DELETE", current.name, testname)
+                    //                    print("DELETE", current.name, testname)
                     //}
                 } else {
-                    print("IN body: ", current.name, testname)
+                    //                    print("IN body: ", current.name, testname)
 
                     // 2. if it's within the test body as var decls, func bodies, exprs, return val, etc.
                     // Then remove the whole function or class using it
                     // let x = UnusedClass()  <--- removing this requires removing occurrences of x (or expr itself) or replacing it with a subsitution everywhere.
                     // let x: UnusedClass     <--- removing this requires above and also assignment to x
-                    // updateBody(current, unusedMap: unusedMap, content: &content)
+                     updateBody(current, unusedMap: unusedMap, content: &content)
                 }
             }
 
@@ -493,22 +496,20 @@ public class ParserViaSourceKit: SourceParsing {
 
             if !shouldDelete {
                 for (k, v) in toDelete {
-                    replace(&content, offset: v.0, length: v.1, with: space)
+                    replace(&content, start: v.0, end: v.1, with: space)
                 }
             }
 
             let url = URL(fileURLWithPath: path)
             lock?.lock()
-            completion(content, url, shouldDelete)
+            completion(content, url, deleteCount, shouldDelete)
             lock?.unlock()
         } catch {
             fatalError(error.localizedDescription)
         }
     }
 
-    private func replace(_ content: inout Data, offset: Int64, length: Int64, with another: UInt8) {
-        let start = Int(offset)
-        let end = Int(length)
+    private func replace(_ content: inout Data, start: Int, end: Int, with another: UInt8) {
         if start > 0, end > start {
             let anotherData = Data(repeating: another, count: end-start)
             let range = start..<end
@@ -522,9 +523,13 @@ public class ParserViaSourceKit: SourceParsing {
         for sub in current.substructures {
             let types = [sub.name.typeComponents, sub.typeName.typeComponents].flatMap{$0}
             for t in types {
-                if unusedMap[t] != nil {
-                    print("FOUND", t, current.name)
-                    replace(&content, offset: sub.range.offset, length: sub.range.length, with: space)
+                var tname = t
+                if t.hasSuffix("Mock") {
+                    tname = String(t.dropLast("Mock".count))
+                }
+                if unusedMap[tname] != nil {
+//                    print("FOUND", t, current.name)
+                    replace(&content, start: sub.startOffset, end: sub.endOffset, with: space)
                 }
             }
             updateBody(sub, unusedMap: unusedMap, content: &content)

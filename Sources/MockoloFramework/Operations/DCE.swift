@@ -41,18 +41,18 @@ import Foundation
 final public class Val {
     let path: String
     let parents: [String]
-    let offset: Int
-    let length: Int
+    let start: Int
+    let end: Int
     var used = false
     public init(path: String,
                 parents: [String],
-                offset: Int64,
-                length: Int64,
+                start: Int,
+                end: Int,
                 used: Bool) {
         self.path = path
         self.parents = parents
-        self.offset = Int(offset)
-        self.length = Int(length)
+        self.start = start
+        self.end = end
         self.used = used
     }
 }
@@ -71,7 +71,6 @@ public func dce(sourceDirs: [String],
     
     
     let t0 = CFAbsoluteTimeGetCurrent()
-    #if ALL
     log("Scan all class decls...")
     var results = [String: Val]()
     p.scanDecls(dirs: sourceDirs, exclusionSuffixes: exclusionSuffixes, queue: dceq, semaphore: sema) { (subResults: [String : Val]) in
@@ -95,7 +94,7 @@ public func dce(sourceDirs: [String],
     log("Filter unused decls...")
     var unusedMap = [String: Val]()
     for (k, v)  in results {        
-        if let usedVal = usedMap[k] {
+        if let _ = usedMap[k] {
             for p in v.parents {
                 results[p]?.used = true
             }
@@ -105,7 +104,7 @@ public func dce(sourceDirs: [String],
     for (k, v)  in results {
         if let _ = usedMap[k] {
             // used
-        } else if v.used {
+        } else if v.used { // this is needed for parents of the type k
             // used
         } else {
             unusedMap[k] = v
@@ -143,24 +142,11 @@ public func dce(sourceDirs: [String],
     }
     let t5 = CFAbsoluteTimeGetCurrent()
     log("Removed unused decls", t5-t4)
-    #endif
 
 
-    let allList = list.components(separatedBy: "\n")
-    var removeList = [String]()
-    p.checkUnused(sourceDirs, unusedList: allList, exclusionSuffixes: exclusionSuffixesForUsed, queue: dceq, semaphore: sema) { (toRemove: [String]) in
-        removeList.append(contentsOf: toRemove)
-    }
-
-    var umap = [String: Val]()
-    for a in allList {
-        if !removeList.contains(a) {
-            umap[a] = Val(path: "", parents: [], offset: 0, length: 0, used: true)
-        }
-    }
-    print(umap)
-
-    p.updateTests(dirs: sourceDirs, unusedMap: umap, queue: dceq, semaphore: sema) { (d: Data, url: URL, deleteFile: Bool) in
+    var testsDeleted = 0
+    p.updateTests(dirs: sourceDirs, unusedMap: unusedMap, queue: dceq, semaphore: sema) { (d: Data, url: URL, deleteCount: Int, deleteFile: Bool) in
+        testsDeleted += deleteCount
         if deleteFile {
             try? FileManager.default.removeItem(at: url)
         } else {
@@ -168,7 +154,7 @@ public func dce(sourceDirs: [String],
         }
     }
     let t6 = CFAbsoluteTimeGetCurrent()
-    log("Removed unused decls", t6-t0)
+    log("Removed tests using unused classes", testsDeleted, t6-t5)
 
     log("Total (s)", t6-t0)
 }

@@ -122,7 +122,8 @@ class Executor {
         
         let xlist = "Images Strings Responses Mock Mocks Screen Screens main Services Service Fixtures Fixture Scene Model Models Exceptions Standin Standins".components(separatedBy: " ")
         let xlist2 = "Images Strings Mock Mocks main Fixtures Fixture Scene Standin Standins".components(separatedBy: " ")
-        let root = "/Users/ellieshin/uber/ios" // "/Users/ellieshin/Developer/uber/ios" // "/Users/ellieshin/uber/mirror/ios/" //"/Users/ellieshin/uber/ios/" // /Users/ellie/uber/ios/"
+        let root = "/Users/ellieshin/uber/ios"
+//        "/Users/ellieshin/uber/ios" // "/Users/ellieshin/Developer/uber/ios" // "/Users/ellieshin/uber/mirror/ios/" //"/Users/ellieshin/uber/ios/" // /Users/ellie/uber/ios/"
         let f1 = root + "/apps"
         let f2 = root + "/libraries"
         let dirs = [f1, f2]

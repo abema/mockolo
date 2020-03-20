@@ -334,7 +334,21 @@ extension Structure: EntityNode {
     var attributeValues: [String]? {
         return attributes?.compactMap { $0["key.attribute"] as? String}
     }
-    
+
+    var startOffset: Int {
+        var start = offset
+        if docOffset > 0, docOffset < start {
+            start = docOffset
+        } else if range.offset > 0, range.offset < start {
+            start = range.offset
+        }
+        return Int(start)
+    }
+
+    var endOffset: Int {
+        return Int(offset + length)
+    }
+
     var range: (offset: Int64, length: Int64) {
         var offsetMin: Int64 = .max
         var offsetMax: Int64 = -1
