@@ -494,9 +494,8 @@ public class ParserViaSourceKit: SourceParsing {
 
     public func stats(dirs: [String],
                       exclusionSuffixes: [String]? = nil,
-                      numThreads: Int? = nil,
                       completion: @escaping (Int, Int) -> ()) {
-        utilScan(dirs: dirs, numThreads: numThreads) { (path: String, lock: NSLock?) in
+        utilScan(dirs: dirs) { (path: String, lock: NSLock?) in
             guard path.shouldParse(with: exclusionSuffixes) else {return}
             do {
                 var pcount = 0
@@ -517,4 +516,5 @@ public class ParserViaSourceKit: SourceParsing {
             }
         }
     }
+
 }

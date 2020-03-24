@@ -650,6 +650,31 @@ extension Trivia {
     }
 }
 
+extension TokenSyntax {
+    var userDefinedType: String? {
+        guard !self.text.contains("-"), !self.text.contains(","), !self.text.contains(" ")  else {return nil}
+        var typename = self.text
+        let isType = typename.first?.isUppercase ?? false
+        
+        // If no default val found, it's potentially used, so add it to used types
+        if isType {
+            if text.contains("Mock"), let t = text.components(separatedBy: "Mock").first {
+                typename = t
+            } else if let _ = Type(typename).defaultSingularVal(isInitParam: false) {
+                return nil
+            }
+            return typename
+        }
+        return nil
+    }
+}
+
+extension TokenSequence {
+    var userDefinedTypes: [String] {
+        let ret = self.compactMap { $0.userDefinedType }
+        return ret
+    }
+}
 
 // MARK - used for cleanup
 
@@ -661,7 +686,7 @@ final class CleanerVisitor: SyntaxVisitor {
     let converter: SourceLocationConverter
     let charset: CharacterSet
     var usedTypes = [String]()
-    var protocolMap = [String: (annotated: Bool, parents: [String], docLoc: (Int, Int))]()
+    var protocolMap = [String: Entry]()
     
     init(annotation: String, path: String, root: SourceFileSyntax) {
         self.annotation = annotation
@@ -677,85 +702,177 @@ final class CleanerVisitor: SyntaxVisitor {
         protocolMap.removeAll()
     }
 
-    func visit(_ node: ReturnClauseSyntax) -> SyntaxVisitorContinueKind {
-        if pass == 0 {
-            let text = node.returnType.description.trimmingCharacters(in: .whitespaces)
-            if let _ = Type(text).defaultVal(with: nil, isInitParam: false) {
-            } else {
-                usedTypes.append(text)
-            }
-            return .visitChildren
-        }
-        return .skipChildren
-    }
+//    func visit(_ node: ReturnClauseSyntax) -> SyntaxVisitorContinueKind {
+//        if pass == 0 {
+//            let text = node.returnType.description.trimmingCharacters(in: .whitespaces)
+//            if let _ = Type(text).defaultVal(with: nil, isInitParam: false) {
+//            } else {
+//                usedTypes.append(text)
+//            }
+//            return .visitChildren
+//        }
+//        return .skipChildren
+//    }
     
-    func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
+    
+//    func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
+////        node.base
+////node.name
+//        return .visitChildren
+//    }
+
+    func visit(_ node: CodeBlockItemSyntax) -> SyntaxVisitorContinueKind {
+//        print(node.description)
         if pass == 1 {
-            let text = node.identifier.text
-            let isType = text.first?.isUppercase ?? false
-            if isType, text.contains("Mock"), let typename = text.components(separatedBy: "Mock").first {
-                usedTypes.append(typename)
+            if let item = node.item as? ClassDeclSyntax {
+                let ret = [item.inheritanceClause?.inheritedTypeCollection.tokens.userDefinedTypes,
+                           item.genericParameterClause?.tokens.userDefinedTypes,
+                           item.genericWhereClause?.tokens.userDefinedTypes,
+                           item.members.tokens.userDefinedTypes].compactMap{$0}.flatMap{$0}
+                
+                usedTypes.append(contentsOf: ret)
+                return .skipChildren
             }
         }
-        return .skipChildren
-    }
-    
-    func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
-        var hasSubExprs = false
-        for v in node.bindings {
-            var vtype = ""
-            if let t1 = v.typeAnnotation {
-                vtype = t1.type.description.trimmingCharacters(in: .whitespaces)
-            } else if let t2 = v.initializer {
-                vtype = t2.value.description.trimmingCharacters(in: .whitespaces)
-                hasSubExprs = true
+        if pass == 0 {
+            
+            if let item = node.item as? ProtocolDeclSyntax {
+                let metadata = item.annotationMetadata(with: annotation)
+                var docloc = (0, 0)
+                if metadata != nil {
+                    let loc = node.startLocation(converter: converter)
+                    if let l = loc.line, let c = loc.column {
+                        let pos = converter.position(ofLine: l, column: c)
+                        if let len = node.leadingTrivia?.sourceLength {
+                            let end = pos.utf8Offset
+                            let start = end - len.utf8Length
+                            docloc = (start, end)
+                        }
+                    }
+                }
+                
+                let parents = item.inheritedTypes.filter{$0 != "AnyObject" && $0 != "class" && $0 != "Any"}
+                protocolMap[item.name] = Entry(path: path, module: path.module, parents: parents, annotated: metadata != nil, docLoc: docloc)
+                
+                
+                let ret = [item.inheritanceClause?.inheritedTypeCollection.tokens.userDefinedTypes,
+                           item.genericWhereClause?.tokens.userDefinedTypes,
+                           item.members.tokens.userDefinedTypes].compactMap{$0}.flatMap{$0}
+                usedTypes.append(contentsOf: ret)
+                
+                return .skipChildren
             }
             
-            if pass == 0 {
-                if let _ = Type(vtype).defaultVal(with: nil, isInitParam: false) {
-                } else if !hasSubExprs {
-                    // If no default val found, it's potentially used, so add it to used types
-                    usedTypes.append(vtype.trimmingCharacters(in: charset))
-                }
+            if let item = node.item as? ExtensionDeclSyntax {
+                let ret = [item.inheritanceClause?.inheritedTypeCollection.tokens.userDefinedTypes,
+                           item.genericWhereClause?.tokens.userDefinedTypes,
+                           item.members.tokens.userDefinedTypes].compactMap{$0}.flatMap{$0}
+                usedTypes.append(contentsOf: ret)
+                return .skipChildren
             }
         }
         
-        return hasSubExprs ? .visitChildren : .skipChildren
-    }
- 
-    func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
         if pass == 1 {
-            let mockClasses = node.inheritedTypes.filter{$0.hasSuffix("Mock")}
-            let used = mockClasses.compactMap {$0.components(separatedBy: "Mock").first}
-            usedTypes.append(contentsOf: used)
+            let ret = node.item.tokens.userDefinedTypes
+            usedTypes.append(contentsOf: ret)
+            return .skipChildren
         }
+        
         return .visitChildren
     }
-    
-    func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
-        if pass == 0 {
-            let metadata = node.annotationMetadata(with: annotation)
-            
-            if protocolMap[node.name] == nil {
-                protocolMap[node.name] = (false, [], (0, 0))
-            }
-            if metadata != nil {
-                protocolMap[node.name]?.annotated = true
 
-                let loc = node.startLocation(converter: converter)
-                if let l = loc.line, let c = loc.column {
-                    let pos = converter.position(ofLine: l, column: c)
-                    if let len = node.leadingTrivia?.sourceLength {
-                        let end = pos.utf8Offset
-                        let start = end - len.utf8Length
-                        protocolMap[node.name]?.docLoc = (start, end)
-                    }
-                }
-            }
-            protocolMap[node.name]?.parents.append(contentsOf: node.inheritedTypes)
-        }
-        return .visitChildren
-    }
+//    func visit(_ node: IdentifierExprSyntax) -> SyntaxVisitorContinueKind {
+//        let text = node.identifier.text
+//
+//        if pass == 0 {
+//            if let _ = Type(text).defaultVal(with: nil, isInitParam: false) {
+//            } else {
+//                let isType = text.first?.isUppercase ?? false
+//                // If no default val found, it's potentially used, so add it to used types
+//                if isType {
+//                    var typename = text
+//                    if text.contains("Mock"), let t = text.components(separatedBy: "Mock").first {
+//                        typename = t
+//                    }
+//                    usedTypes.append(contentsOf: typename.typeComponents)
+//                }
+//            }
+//        } else if pass == 1 {
+//            let isType = text.first?.isUppercase ?? false
+//            if isType {
+//                var typename = text
+//                if text.contains("Mock"), let t = text.components(separatedBy: "Mock").first {
+//                    typename = t
+//                }
+//                usedTypes.append(contentsOf: typename.typeComponents)
+//            }
+//        }
+//        return .visitChildren
+//    }
+//
+//    func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+//        for v in node.bindings {
+//            var vtype = ""
+//            if let t1 = v.typeAnnotation {
+//                vtype = t1.type.description.trimmingCharacters(in: .whitespaces)
+//            }
+//
+//            if let t2 = v.initializer {
+//                if vtype.isEmpty {
+//                    vtype = t2.value.description.trimmingCharacters(in: .whitespaces)
+//                }
+//            }
+//
+//            if pass == 0 {
+//                let t = Type(vtype)
+//                if let _ = t.defaultVal(with: nil, isInitParam: false) {
+//                } else if t.isSingular {
+//                    // If no default val found, it's potentially used, so add it to used types
+//                    var typename = vtype
+//                    if typename.contains("Mock"), let t = typename.components(separatedBy: "Mock").first {
+//                        typename = t
+//                    }
+//                    usedTypes.append(contentsOf: typename.typeComponents)
+//                }
+//            }
+//        }
+//
+//        return .visitChildren
+//    }
+//
+//    func visit(_ node: ClassDeclSyntax) -> SyntaxVisitorContinueKind {
+//        if pass == 1 {
+//            let mockClasses = node.inheritedTypes.filter{$0.hasSuffix("Mock")}
+//            let used = mockClasses.compactMap {$0.components(separatedBy: "Mock").first}
+//            usedTypes.append(contentsOf: used)
+//        }
+//        return .visitChildren
+//    }
+//
+//    func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+//        if pass == 0 {
+//            let metadata = node.annotationMetadata(with: annotation)
+//
+//            if protocolMap[node.name] == nil {
+//                protocolMap[node.name] = (false, [], (0, 0))
+//            }
+//            if metadata != nil {
+//                protocolMap[node.name]?.annotated = true
+//
+//                let loc = node.startLocation(converter: converter)
+//                if let l = loc.line, let c = loc.column {
+//                    let pos = converter.position(ofLine: l, column: c)
+//                    if let len = node.leadingTrivia?.sourceLength {
+//                        let end = pos.utf8Offset
+//                        let start = end - len.utf8Length
+//                        protocolMap[node.name]?.docLoc = (start, end)
+//                    }
+//                }
+//            }
+//            protocolMap[node.name]?.parents.append(contentsOf: node.inheritedTypes)
+//        }
+//        return .visitChildren
+//    }
 }
 
 

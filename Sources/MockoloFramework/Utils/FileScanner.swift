@@ -16,6 +16,7 @@
 
 import Foundation
 
+public var staticNumThreads: Int? = nil
 
 public func utilScan(dirs: [String],
                      numThreads: Int? = nil,
@@ -23,8 +24,9 @@ public func utilScan(dirs: [String],
     
     var queue: DispatchQueue?
     var semaphore: DispatchSemaphore?
-    if numThreads == nil || (numThreads ?? 0) > 1 {
-        let limit = numThreads ?? 12
+    
+    if staticNumThreads == nil || (staticNumThreads ?? 0) > 1 {
+        let limit = staticNumThreads ?? 12
         semaphore = DispatchSemaphore(value: limit)
         queue = DispatchQueue(label: "dce-q", qos: DispatchQoS.userInteractive, attributes: DispatchQueue.Attributes.concurrent)
     }

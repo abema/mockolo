@@ -18,7 +18,7 @@ import Foundation
 import SwiftSyntax
 
 public class ParserViaSwiftSyntax: SourceParsing {
-        
+    
     public init() {}
     
     public func parseProcessedDecls(_ paths: [String],
@@ -81,51 +81,67 @@ public class ParserViaSwiftSyntax: SourceParsing {
     }
     
     
-    func scanUsedTypes(_ path: String,
-                       _ annotation: String,
-                        completion: @escaping ([String]) -> ()) {
-        
-        do {
-            let node = try SyntaxParser.parse(path)
-            var visitor = CleanerVisitor(annotation: annotation, path: path, root: node)
-            node.walk(&visitor)
-            completion(visitor.usedTypes)
-            visitor.reset()
-        } catch {
-            fatalError(error.localizedDescription)
+    
+    public func scanMockables(dirs: [String],
+                              exclusionSuffixes: [String]?,
+                              annotation: String,
+                              completion: @escaping (String, [String], [String: Entry]) -> ()) {
+        utilScan(dirs: dirs) { (path, lock) in
+            guard !path.contains("___"), path.shouldParse(with: exclusionSuffixes) else { return }
+            
+            do {
+                let node = try SyntaxParser.parse(path)
+                var visitor = CleanerVisitor(annotation: annotation, path: path, root: node)
+                node.walk(&visitor)
+                lock?.lock()
+                defer {lock?.unlock()}
+                completion(path, visitor.usedTypes, visitor.protocolMap)
+                visitor.reset()
+            } catch {
+                fatalError(error.localizedDescription)
+            }
         }
     }
     
-    func scanMockableTypes(_ path: String,
-                   _ annotation: String,
-                   completion: @escaping ([String], [String: (annotated: Bool, parents: [String], docLoc: (Int, Int))]) -> ()) {
+    func scanUsedTypes(dirs: [String],
+                       exclusionSuffixes: [String]?,
+                       completion: @escaping (String, [String]) -> ()) {
         
-        do {
-            let node = try SyntaxParser.parse(path)
-            var visitor = CleanerVisitor(annotation: annotation, path: path, root: node)
-            node.walk(&visitor)
-            completion(visitor.usedTypes, visitor.protocolMap)
-//            visitor.reset()
-        } catch {
-            fatalError(error.localizedDescription)
+        utilScan(dirs: dirs) { (path, lock) in
+            guard !path.contains("___"),
+                path.hasSuffix(".swift"),
+                (path.contains("Test") || path.contains("Mocks.swift") || path.contains("Mock.swift")) else { return }
+            
+            do {
+                let node = try SyntaxParser.parse(path)
+                var visitor = CleanerVisitor(annotation: "", path: path, root: node)
+                node.walk(&visitor)
+                lock?.lock()
+                defer {lock?.unlock()}
+                
+                completion(path, visitor.usedTypes.filter{!$0.isEmpty})
+                visitor.reset()
+            } catch {
+                fatalError(error.localizedDescription)
+            }
         }
     }
-
-
+    
+    
     public func stats(dirs: [String],
                       exclusionSuffixes: [String]? = nil,
                       numThreads: Int? = nil,
                       completion: @escaping (Int, Int) -> ()) {
-          utilScan(dirs: dirs, numThreads: numThreads) { (path: String, lock: NSLock?) in
+        utilScan(dirs: dirs) { (path: String, lock: NSLock?) in
             guard path.shouldParse(with: exclusionSuffixes) else {return}
             do {
                 let node = try SyntaxParser.parse(path)
                 let rewriter = CleanerWriter()
                 _ = rewriter.visit(node)
-
+                
                 lock?.lock()
+                defer {lock?.unlock()}
                 completion(rewriter.k, rewriter.p)
-                lock?.unlock()
             } catch {
                 fatalError()
             }

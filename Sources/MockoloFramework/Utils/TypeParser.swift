@@ -55,6 +55,13 @@ public struct Type {
         return sub.isSingular
     }
     
+    var base: String {
+        if isOptional || isIUO {
+            return String(typeName.dropLast(1))
+        }
+        return typeName
+    }
+    
     var underlyingType: String {
         var ret = typeName
 
@@ -394,11 +401,11 @@ public struct Type {
             return val
         }
         
-        if !arg.isSingular {
+        if hasClosure {
             return nil
         }
-        
-        if arg.hasClosure {
+
+        if !arg.isSingular {
             return nil
         }
         
