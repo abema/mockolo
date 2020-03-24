@@ -64,9 +64,7 @@ public func generate(sourceDirs: [String]?,
     let t0 = CFAbsoluteTimeGetCurrent()
     log("Process input mock files...", level: .info)
     if let mockFilePaths = mockFilePaths, !mockFilePaths.isEmpty {
-        parser.parseProcessedDecls(mockFilePaths,
-                                   semaphore: sema,
-                                   queue: mockgenQueue) { (elements, imports) in
+        parser.parseProcessedDecls(mockFilePaths) { (elements, imports) in
                                     elements.forEach { element in
                                         parentMocks[element.entityNode.name] = element
                                     }
@@ -93,9 +91,7 @@ public func generate(sourceDirs: [String]?,
     parser.parseDecls(paths,
                       isDirs: isDirs,
                       exclusionSuffixes: exclusionSuffixes,
-                      annotation: annotation,
-                      semaphore: sema,
-                      queue: mockgenQueue) { (elements, imports) in
+                      annotation: annotation) { (elements, imports) in
                         elements.forEach { element in
                             protocolMap[element.entityNode.name] = element
                             if element.isAnnotated {

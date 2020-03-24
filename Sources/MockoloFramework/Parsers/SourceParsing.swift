@@ -25,8 +25,6 @@ public protocol SourceParsing {
     
     /// Parses processed decls (mock classes) and calls a completion block
     func parseProcessedDecls(_ paths: [String],
-                             semaphore: DispatchSemaphore?,
-                             queue: DispatchQueue?,
                              completion: @escaping ([Entity], [String: [String]]?) -> ())
     
     /// Parses decls (protocol, class) with annotation (/// @mockable) and calls a completion block
@@ -34,7 +32,5 @@ public protocol SourceParsing {
                     isDirs: Bool,
                     exclusionSuffixes: [String]?,
                     annotation: String,
-                    semaphore: DispatchSemaphore?,
-                    queue: DispatchQueue?,
                     completion: @escaping ([Entity], [String: [String]]?) -> ())
 }

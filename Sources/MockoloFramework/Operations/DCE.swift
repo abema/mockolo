@@ -57,23 +57,47 @@ final public class Val {
     }
 }
 
+
 public func dce(sourceDirs: [String],
                 exclusionSuffixes: [String]? = nil,
                 exclusionSuffixesForUsed: [String]? = nil,
                 outputFilePath: String? = nil,
                 concurrencyLimit: Int? = nil) {
-    
+
+    let prs = ParserViaSwiftSyntax()
+    var nk = 0
+    var np = 0
+    let u = CFAbsoluteTimeGetCurrent()
+
+    prs.stats(dirs: sourceDirs,
+              exclusionSuffixes: exclusionSuffixes,
+              numThreads: concurrencyLimit) { (k, p) in
+                nk += k
+                np += p
+    }
+    let u1 = CFAbsoluteTimeGetCurrent()
+    log(np, nk, u1-u)
+
+    log("Scanning...")
     let p = ParserViaSourceKit()
-    
-    let limit = concurrencyLimit ?? 12
-    let sema = DispatchSemaphore(value: limit)
-    let dceq = DispatchQueue(label: "dce-q", qos: DispatchQoS.userInteractive, attributes: DispatchQueue.Attributes.concurrent)
-    
-    
+    let t = CFAbsoluteTimeGetCurrent()
+    var pc = 0
+    var kc = 0
+
+    p.stats(dirs: sourceDirs,
+            exclusionSuffixes: exclusionSuffixes,
+            numThreads: nil) { (p, k) in
+                pc += p
+                kc += k
+    }
     let t0 = CFAbsoluteTimeGetCurrent()
+    log("Total", pc, kc, t0-t)
+    return
+
+
     log("Scan all class decls...")
     var results = [String: Val]()
-    p.scanDecls(dirs: sourceDirs, exclusionSuffixes: exclusionSuffixes, queue: dceq, semaphore: sema) { (subResults: [String : Val]) in
+    p.scanDecls(dirs: sourceDirs, exclusionSuffixes: exclusionSuffixes) { (subResults: [String : Val]) in
         for (k, v) in subResults {
             results[k] = v
         }
@@ -83,7 +107,7 @@ public func dce(sourceDirs: [String],
     
     log("Scan used class decls...")
     var usedMap = [String: Bool]()
-    p.scanUsedDecls(dirs: sourceDirs, exclusionSuffixes: exclusionSuffixesForUsed, queue: dceq, semaphore: sema) { (subResults: [String]) in
+    p.scanUsedDecls(dirs: sourceDirs, exclusionSuffixes: exclusionSuffixesForUsed) { (subResults: [String]) in
         for r in subResults {
             usedMap[r] = false
         }
@@ -136,6 +160,10 @@ public func dce(sourceDirs: [String],
     log("#Used", usedMap.count)
     log("#Unused", unusedMap.count, "#Paths with unused classes", pathSet.count)
 
+
+    let limit = concurrencyLimit ?? 12
+    let sema = DispatchSemaphore(value: limit)
+    let dceq = DispatchQueue(label: "dce-q", qos: DispatchQoS.userInteractive, attributes: DispatchQueue.Attributes.concurrent)
 
     p.removeUnusedDecls(declMap: unusedMap, queue: dceq, semaphore: sema) { (d: Data, url: URL) in
         try? d.write(to: url)

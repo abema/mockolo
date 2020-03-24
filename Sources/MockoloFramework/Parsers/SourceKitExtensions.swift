@@ -212,7 +212,15 @@ extension Structure: EntityNode {
         }
         return .unknownVal
     }
-    
+
+    var isPublic: Bool {
+        return accessControlLevel == "public" ||
+            accessControlLevel == "open"
+    }
+    var isInternal: Bool {
+        return accessControlLevel == "internal"
+    }
+
     var isPrivate: Bool {
         if let attrs = attributeValues {
             return attrs.contains(SwiftDeclarationAttributeKind.private.rawValue) || attrs.contains(SwiftDeclarationAttributeKind.fileprivate.rawValue)
@@ -220,6 +228,7 @@ extension Structure: EntityNode {
         
         return false
     }
+    
     var isFinal: Bool {
         return attributeValues?.contains(SwiftDeclarationAttributeKind.final.rawValue) ?? false
     }

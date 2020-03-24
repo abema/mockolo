@@ -22,25 +22,9 @@ public class ParserViaSourceKit: SourceParsing {
     public init() {}
     
     public func parseProcessedDecls(_ paths: [String],
-                                    semaphore: DispatchSemaphore?,
-                                    queue: DispatchQueue?,
                                     completion: @escaping ([Entity], [String: [String]]?) -> ()) {
-        
-        if let queue = queue {
-            let lock = NSLock()
-            for filePath in paths {
-                _ = semaphore?.wait(timeout: DispatchTime.distantFuture)
-                queue.async {
-                    self.generateProcessedASTs(filePath, lock: lock, completion: completion)
-                    semaphore?.signal()
-                }
-            }
-            // Wait for queue to drain
-            queue.sync(flags: .barrier) {}
-        } else {
-            for filePath in paths {
-                generateProcessedASTs(filePath, lock: nil, completion: completion)
-            }
+        utilScan(files: paths) { (filePath, lock) in
+            self.generateProcessedASTs(filePath, lock: lock, completion: completion)
         }
     }
     
@@ -48,90 +32,48 @@ public class ParserViaSourceKit: SourceParsing {
                            isDirs: Bool,
                            exclusionSuffixes: [String]? = nil,
                            annotation: String,
-                           semaphore: DispatchSemaphore?,
-                           queue: DispatchQueue?,
                            completion: @escaping ([Entity], [String: [String]]?) -> ()) {
         guard !annotation.isEmpty else { return }
         guard let paths = paths else { return }
         if isDirs {
-            generateASTs(dirs: paths, exclusionSuffixes: exclusionSuffixes, annotation: annotation, semaphore: semaphore, queue: queue, completion: completion)
+            generateASTs(dirs: paths, exclusionSuffixes: exclusionSuffixes, annotation: annotation, completion: completion)
         } else {
-            generateASTs(files: paths, exclusionSuffixes: exclusionSuffixes, annotation: annotation, semaphore: semaphore, queue: queue, completion: completion)
+            generateASTs(files: paths, exclusionSuffixes: exclusionSuffixes, annotation: annotation, completion: completion)
         }
     }
     
     private func generateASTs(dirs: [String],
                               exclusionSuffixes: [String]? = nil,
                               annotation: String,
-                              semaphore: DispatchSemaphore?,
-                              queue: DispatchQueue?,
                               completion: @escaping ([Entity], [String: [String]]?) -> ()) {
         
         guard let annotationData = annotation.data(using: .utf8) else {
             fatalError("Annotation is invalid: \(annotation)")
         }
-        if let queue = queue {
-            let lock = NSLock()
-            
-            scanPaths(dirs) { filePath in
-                _ = semaphore?.wait(timeout: DispatchTime.distantFuture)
-                queue.async {
-                    self.generateASTs(filePath,
-                                      exclusionSuffixes: exclusionSuffixes,
-                                      annotationData: annotationData,
-                                      lock: lock,
-                                      completion: completion)
-                    semaphore?.signal()
-                }
-            }
-            
-            // Wait for queue to drain
-            queue.sync(flags: .barrier) {}
-        } else {
-            scanPaths(dirs) { filePath in
-                generateASTs(filePath,
-                             exclusionSuffixes: exclusionSuffixes,
-                             annotationData: annotationData,
-                             lock: nil,
-                             completion: completion)
-            }
+
+        utilScan(dirs: dirs) { (path, lock) in
+            self.generateASTs(path,
+                              exclusionSuffixes: exclusionSuffixes,
+                              annotationData: annotationData,
+                              lock: lock,
+                              completion: completion)
         }
     }
     
     private func generateASTs(files: [String],
                               exclusionSuffixes: [String]? = nil,
                               annotation: String,
-                              semaphore: DispatchSemaphore?,
-                              queue: DispatchQueue?,
                               completion: @escaping ([Entity], [String: [String]]?) -> ()) {
         guard let annotationData = annotation.data(using: .utf8) else {
             fatalError("Annotation is invalid: \(annotation)")
         }
-        
-        if let queue = queue {
-            let lock = NSLock()
-            for filePath in files {
-                _ = semaphore?.wait(timeout: DispatchTime.distantFuture)
-                queue.async {
-                    self.generateASTs(filePath,
-                                      exclusionSuffixes: exclusionSuffixes,
-                                      annotationData: annotationData,
-                                      lock: lock,
-                                      completion: completion)
-                    semaphore?.signal()
-                }
-            }
-            // Wait for queue to drain
-            queue.sync(flags: .barrier) {}
-            
-        } else {
-            for filePath in files {
-                generateASTs(filePath,
-                             exclusionSuffixes: exclusionSuffixes,
-                             annotationData: annotationData,
-                             lock: nil,
-                             completion: completion)
-            }
+        utilScan(files: files) { (path, lock) in
+            self.generateASTs(path,
+                              exclusionSuffixes: exclusionSuffixes,
+                              annotationData: annotationData,
+                              lock: lock,
+                              completion: completion)
+
         }
     }
     
@@ -189,29 +131,15 @@ public class ParserViaSourceKit: SourceParsing {
         }
     }
     
-    
+
     func scanDecls(dirs: [String],
                    exclusionSuffixes: [String]? = nil,
-                   queue: DispatchQueue?,
-                   semaphore: DispatchSemaphore?,
                    completion: @escaping ([String: Val]) -> ()) {
-        
-        if let queue = queue {
-            let lock = NSLock()
-            
-            scanPaths(dirs) { filePath in
-                _ = semaphore?.wait(timeout: DispatchTime.distantFuture)
-                queue.async {
-                    self.scanDecls(filePath,
-                                   exclusionSuffixes: exclusionSuffixes,
-                                   lock: lock,
-                                   completion: completion)
-                    semaphore?.signal()
-                }
-            }
-            
-            // Wait for queue to drain
-            queue.sync(flags: .barrier) {}
+        utilScan(dirs: dirs) { (path: String, lock: NSLock?) in
+            self.scanDecls(path,
+                           exclusionSuffixes: exclusionSuffixes,
+                           lock: lock,
+                           completion: completion)
         }
     }
     
@@ -225,7 +153,7 @@ public class ParserViaSourceKit: SourceParsing {
             var results = [String: Val]()
             let topstructure = try Structure(path: path)
             for current in topstructure.substructures {
-                if current.isProtocol, !current.name.hasPrefix("_"), !current.name.hasSuffix("Objc"), !current.name.contains("__VARIABLE_") {
+                if (current.isProtocol  || current.isClass), !current.name.hasPrefix("_"), !current.name.hasPrefix("UB"), !current.name.hasSuffix("Objc"), !current.name.contains("__VARIABLE_"), !current.inheritedTypes.contains("NSObject") {
                     if let attrs = current.attributeValues {
                         let hasobjc = attrs.filter{$0.contains("objc")}
                         if !hasobjc.isEmpty {
@@ -248,30 +176,15 @@ public class ParserViaSourceKit: SourceParsing {
     
     func scanUsedDecls(dirs: [String],
                        exclusionSuffixes: [String]? = nil,
-                       queue: DispatchQueue?,
-                       semaphore: DispatchSemaphore?,
                        completion: @escaping ([String]) -> ()) {
 
-        if let queue = queue {
-            let lock = NSLock()
-
-            scanPaths(dirs) { filePath in
-                _ = semaphore?.wait(timeout: DispatchTime.distantFuture)
-                queue.async {
-                    self.scanUsedDecls(filePath,
-                                       exclusionSuffixes: exclusionSuffixes,
-                                       lock: lock,
-                                       completion: completion)
-                    semaphore?.signal()
-                }
-            }
-
-            // Wait for queue to drain
-            queue.sync(flags: .barrier) {}
+        utilScan(dirs: dirs) { (filePath, lock) in
+            self.scanUsedDecls(filePath,
+                               exclusionSuffixes: exclusionSuffixes,
+                               lock: lock,
+                               completion: completion)
         }
     }
-
-
 
     func scanUsedDecls(_ path: String,
                        exclusionSuffixes: [String]? = nil,
@@ -287,7 +200,7 @@ public class ParserViaSourceKit: SourceParsing {
             let topstructure = try Structure(path: path)
             for current in topstructure.substructures {
 
-                if current.isProtocol {
+                if current.isProtocol || current.isClass {
                     results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
                 } else if current.isExtension {
                     results.append(current.name)
@@ -405,7 +318,7 @@ public class ParserViaSourceKit: SourceParsing {
             let topstructure = try Structure(path: filepath)
             var toRemove = [String]()
             for current in topstructure.substructures {
-                guard current.isProtocol else { continue }
+                guard current.isProtocol || current.isClass else { continue }
                 if unusedList.contains(current.name) {
                     toRemove.append(current.name)
                 }
@@ -488,11 +401,11 @@ public class ParserViaSourceKit: SourceParsing {
                     // Then remove the whole function or class using it
                     // let x = UnusedClass()  <--- removing this requires removing occurrences of x (or expr itself) or replacing it with a subsitution everywhere.
                     // let x: UnusedClass     <--- removing this requires above and also assignment to x
-                     updateBody(current, unusedMap: unusedMap, content: &content)
+                    updateBody(current, unusedMap: unusedMap, content: &content)
                 }
             }
 
-            let shouldDelete = declsInFile == deleteCount
+            let shouldDelete = deleteCount > 0 && declsInFile == deleteCount
 
             if !shouldDelete {
                 for (k, v) in toDelete {
@@ -528,7 +441,7 @@ public class ParserViaSourceKit: SourceParsing {
                     tname = String(t.dropLast("Mock".count))
                 }
                 if unusedMap[tname] != nil {
-//                    print("FOUND", t, current.name)
+                    //                    print("FOUND", t, current.name)
                     replace(&content, start: sub.startOffset, end: sub.endOffset, with: space)
                 }
             }
@@ -577,6 +490,31 @@ public class ParserViaSourceKit: SourceParsing {
             gatherUsedDecls(sub, results: &results)
         }
     }
+
+
+    public func stats(dirs: [String],
+                      exclusionSuffixes: [String]? = nil,
+                      numThreads: Int? = nil,
+                      completion: @escaping (Int, Int) -> ()) {
+        utilScan(dirs: dirs, numThreads: numThreads) { (path: String, lock: NSLock?) in
+            guard path.shouldParse(with: exclusionSuffixes) else {return}
+            do {
+                var pcount = 0
+                var kcount = 0
+                let topstructure = try Structure(path: path)
+                for current in topstructure.substructures {
+                    if current.isProtocol {
+                        pcount += 1
+                    }
+                    if current.isClass {
+                        kcount += 1
+                    }
+                }
+
+                completion(pcount, kcount)
+            } catch {
+                fatalError()
+            }
+        }
+    }
 }
-
-

@@ -22,8 +22,6 @@ public class ParserViaSwiftSyntax: SourceParsing {
     public init() {}
     
     public func parseProcessedDecls(_ paths: [String],
-                                    semaphore: DispatchSemaphore?,
-                                    queue: DispatchQueue?,
                                     completion: @escaping ([Entity], [String: [String]]?) -> ()) {
         var treeVisitor = EntityVisitor()
         for filePath in paths {
@@ -35,8 +33,6 @@ public class ParserViaSwiftSyntax: SourceParsing {
                            isDirs: Bool,
                            exclusionSuffixes: [String]? = nil,
                            annotation: String,
-                           semaphore: DispatchSemaphore?,
-                           queue: DispatchQueue?,
                            completion: @escaping ([Entity], [String: [String]]?) -> ()) {
         
         guard let paths = paths else { return }
@@ -112,6 +108,27 @@ public class ParserViaSwiftSyntax: SourceParsing {
 //            visitor.reset()
         } catch {
             fatalError(error.localizedDescription)
+        }
+    }
+
+
+    public func stats(dirs: [String],
+                      exclusionSuffixes: [String]? = nil,
+                      numThreads: Int? = nil,
+                      completion: @escaping (Int, Int) -> ()) {
+          utilScan(dirs: dirs, numThreads: numThreads) { (path: String, lock: NSLock?) in
+            guard path.shouldParse(with: exclusionSuffixes) else {return}
+            do {
+                let node = try SyntaxParser.parse(path)
+                let rewriter = CleanerWriter()
+                _ = rewriter.visit(node)
+
+                lock?.lock()
+                completion(rewriter.k, rewriter.p)
+                lock?.unlock()
+            } catch {
+                fatalError()
+            }
         }
     }
 }

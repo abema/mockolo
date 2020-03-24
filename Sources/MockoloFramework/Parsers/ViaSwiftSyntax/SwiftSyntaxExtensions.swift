@@ -758,3 +758,21 @@ final class CleanerVisitor: SyntaxVisitor {
     }
 }
 
+
+public final class CleanerWriter: SyntaxRewriter {
+    var k = 0
+    var p = 0
+    public func reset() {
+        k = 0
+        p = 0
+    }
+    override public func visit(_ node: ProtocolDeclSyntax) -> DeclSyntax {
+        p += 1
+        return super.visit(node)
+    }
+    override public func visit(_ node: ClassDeclSyntax) -> DeclSyntax {
+//        print(node.identifier.text)
+        k += 1
+        return super.visit(node)
+    }
+}

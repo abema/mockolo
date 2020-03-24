@@ -122,8 +122,10 @@ class Executor {
         
         let xlist = "Images Strings Responses Mock Mocks Screen Screens main Services Service Fixtures Fixture Scene Model Models Exceptions Standin Standins".components(separatedBy: " ")
         let xlist2 = "Images Strings Mock Mocks main Fixtures Fixture Scene Standin Standins".components(separatedBy: " ")
-        let root = "/Users/ellieshin/uber/ios"
-//        "/Users/ellieshin/uber/ios" // "/Users/ellieshin/Developer/uber/ios" // "/Users/ellieshin/uber/mirror/ios/" //"/Users/ellieshin/uber/ios/" // /Users/ellie/uber/ios/"
+
+
+        let dceroot = "/Users/ellieshin/uber/ios"
+        let root = "/Users/ellieshin/uber/mirror/ios"
         let f1 = root + "/apps"
         let f2 = root + "/libraries"
         let dirs = [f1, f2]
@@ -133,7 +135,25 @@ class Executor {
         let fop = "/Users/ellieshin/Developer/scanner/results"
         let climit = 12
 
-        
+        dce(sourceDirs: dirs,
+            exclusionSuffixes: xlist2,
+            exclusionSuffixesForUsed: nil,
+            outputFilePath: op,
+            concurrencyLimit: climit)
+        exit(0)
+        // multi
+        // 22953, 30020, 6191  // 22955, 30026, 6192, // 22955, 30028, 6192, // 22954, 30022, 6192,
+        // 22775, 29855, 6196, // 22773, 29856, 6196, // 22775, 29857, 6195, // 22772, 29855, 6195,
+
+        // single
+        // 22955, 30029, 6192,
+        // 22775, 29862, 6196
+        // p: -180, k: -167, LoC: 5K
+
+        // tests
+        // 11, 12179, 354,  // 11, 12180, 354,
+        // 11, 12115, 349,  // 11, 12117, 349,
+        // p: 0, k: -64, e: -5
 
         dce(sourceDirs: dirs,
             exclusionSuffixes: xlist,
