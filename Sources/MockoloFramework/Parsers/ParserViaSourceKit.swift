@@ -50,7 +50,7 @@ public class ParserViaSourceKit: SourceParsing {
         guard let annotationData = annotation.data(using: .utf8) else {
             fatalError("Annotation is invalid: \(annotation)")
         }
-
+        
         utilScan(dirs: dirs) { (path, lock) in
             self.generateASTs(path,
                               exclusionSuffixes: exclusionSuffixes,
@@ -73,7 +73,7 @@ public class ParserViaSourceKit: SourceParsing {
                               annotationData: annotationData,
                               lock: lock,
                               completion: completion)
-
+            
         }
     }
     
@@ -131,110 +131,90 @@ public class ParserViaSourceKit: SourceParsing {
         }
     }
     
-
+    
     func scanDecls(dirs: [String],
                    exclusionSuffixes: [String]? = nil,
                    completion: @escaping ([String: Val]) -> ()) {
         utilScan(dirs: dirs) { (path: String, lock: NSLock?) in
-            self.scanDecls(path,
-                           exclusionSuffixes: exclusionSuffixes,
-                           lock: lock,
-                           completion: completion)
+            guard path.shouldParse(with: exclusionSuffixes) else { return }
+            do {
+                var results = [String: Val]()
+                let topstructure = try Structure(path: path)
+                for current in topstructure.substructures {
+                    if (current.isProtocol  || current.isClass), !current.name.hasPrefix("_"), !current.name.hasPrefix("UB"), !current.name.hasSuffix("Objc"), !current.name.contains("__VARIABLE_"), !current.inheritedTypes.contains("NSObject") {
+                        if let attrs = current.attributeValues {
+                            let hasobjc = attrs.filter{$0.contains("objc")}
+                            if !hasobjc.isEmpty {
+                                continue
+                            }
+                        }
+                        
+                        results[current.name] = Val(path: path, parents: current.inheritedTypes, start: current.startOffset, end: current.endOffset, used: false)
+                    }
+                }
+                
+                lock?.lock()
+                completion(results)
+                lock?.unlock()
+                
+            } catch {
+                fatalError(error.localizedDescription)
+            }
         }
     }
     
-    func scanDecls(_ path: String,
-                   exclusionSuffixes: [String]? = nil,
-                   lock: NSLock?,
-                   completion: @escaping ([String: Val]) -> ()) {
-        
-        guard path.shouldParse(with: exclusionSuffixes) else { return }
-        do {
-            var results = [String: Val]()
-            let topstructure = try Structure(path: path)
-            for current in topstructure.substructures {
-                if (current.isProtocol  || current.isClass), !current.name.hasPrefix("_"), !current.name.hasPrefix("UB"), !current.name.hasSuffix("Objc"), !current.name.contains("__VARIABLE_"), !current.inheritedTypes.contains("NSObject") {
-                    if let attrs = current.attributeValues {
-                        let hasobjc = attrs.filter{$0.contains("objc")}
-                        if !hasobjc.isEmpty {
-                            continue
-                        }
-                    }
-
-                    results[current.name] = Val(path: path, parents: current.inheritedTypes, start: current.startOffset, end: current.endOffset, used: false)
-                }
-            }
-            
-            lock?.lock()
-            completion(results)
-            lock?.unlock()
-            
-        } catch {
-            fatalError(error.localizedDescription)
-        }
-    }
+    
     
     func scanUsedDecls(dirs: [String],
                        exclusionSuffixes: [String]? = nil,
                        completion: @escaping ([String]) -> ()) {
-
-        utilScan(dirs: dirs) { (filePath, lock) in
-            self.scanUsedDecls(filePath,
-                               exclusionSuffixes: exclusionSuffixes,
-                               lock: lock,
-                               completion: completion)
-        }
-    }
-
-    func scanUsedDecls(_ path: String,
-                       exclusionSuffixes: [String]? = nil,
-                       lock: NSLock?,
-                       completion: @escaping ([String]) -> ()) {
-
-        guard path.shouldParse(with: exclusionSuffixes) else { return }
-        guard let content = FileManager.default.contents(atPath: path) else {
-            fatalError("Retrieving contents of \(path) failed")
-        }
-        do {
-            var results = [String]()
-            let topstructure = try Structure(path: path)
-            for current in topstructure.substructures {
-
-                if current.isProtocol || current.isClass {
-                    results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
-                } else if current.isExtension {
-                    results.append(current.name)
-                    results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
-                }
-
-                // This handles members of class/extensions as well as unparsed items such as global decls, typealias rhs value, Type.self
-                let ret = parseContent(content: content, start: Int(current.nameOffset + current.nameLength), end: Int(current.offset+current.length))
-                results.append(contentsOf: ret)
-
-                #if USESOURCEKIT
-                if current.kind == "source.lang.swift.decl.var.global", !(current.typeName == .unknownVal || current.typeName.isEmpty || current.typeName == "Void") {
-                    results.append(contentsOf: current.typeName.typeComponents)
-                }
-                if current.kind == "source.lang.swift.expr.call" {
-                    results.append(contentsOf: current.name.typeComponents)
-                }
-                if current.kind == "source.lang.swift.decl.function.free", !(current.typeName == .unknownVal || current.typeName.isEmpty || current.typeName == "Void") {
-                    results.append(contentsOf: current.typeName.typeComponents)
-                }
-                gatherUsedDecls(current, results: &results)
-                #endif
+        
+        utilScan(dirs: dirs) { (path, lock) in
+            guard path.shouldParse(with: exclusionSuffixes) else { return }
+            guard let content = FileManager.default.contents(atPath: path) else {
+                fatalError("Retrieving contents of \(path) failed")
             }
-
-            lock?.lock()
-            completion(results)
-            lock?.unlock()
-
-        } catch {
-            fatalError(error.localizedDescription)
+            do {
+                var results = [String]()
+                let topstructure = try Structure(path: path)
+                for current in topstructure.substructures {
+                    
+                    if current.isProtocol || current.isClass {
+                        results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
+                    } else if current.isExtension {
+                        results.append(current.name)
+                        results.append(contentsOf: current.inheritedTypes.map{$0.typeComponents}.flatMap{$0})
+                    }
+                    
+                    // This handles members of class/extensions as well as unparsed items such as global decls, typealias rhs value, Type.self
+                    let ret = self.parseContent(content: content, start: Int(current.nameOffset + current.nameLength), end: Int(current.offset+current.length))
+                    results.append(contentsOf: ret)
+                    
+                    #if USESOURCEKIT
+                    if current.kind == "source.lang.swift.decl.var.global", !(current.typeName == .unknownVal || current.typeName.isEmpty || current.typeName == "Void") {
+                        results.append(contentsOf: current.typeName.typeComponents)
+                    }
+                    if current.kind == "source.lang.swift.expr.call" {
+                        results.append(contentsOf: current.name.typeComponents)
+                    }
+                    if current.kind == "source.lang.swift.decl.function.free", !(current.typeName == .unknownVal || current.typeName.isEmpty || current.typeName == "Void") {
+                        results.append(contentsOf: current.typeName.typeComponents)
+                    }
+                    gatherUsedDecls(current, results: &results)
+                    #endif
+                }
+                
+                lock?.lock()
+                completion(results)
+                lock?.unlock()
+                
+            } catch {
+                fatalError(error.localizedDescription)
+            }
         }
     }
-
-
+    
+    
     func removeUnusedDecls(declMap: [String: Val],
                            queue: DispatchQueue?,
                            semaphore: DispatchSemaphore?,
@@ -253,12 +233,12 @@ public class ParserViaSourceKit: SourceParsing {
                     semaphore?.signal()
                 }
             }
-
+            
             // Wait for queue to drain
             queue.sync(flags: .barrier) {}
         }
     }
-
+    
     let space = UInt8(32)
     let newline = UInt8(10)
     func removeUnusedDecls(_ path: String,
@@ -274,21 +254,21 @@ public class ParserViaSourceKit: SourceParsing {
         let spaces = Data(repeating: space, count: end-start)
         let range = start..<end
         content.replaceSubrange(range, with: spaces)
-
+        
         let url = URL(fileURLWithPath: path)
-
+        
         lock?.lock()
         completion(content, url)
         lock?.unlock()
     }
-
+    
     func checkUnused(_ dirs: [String],
                      unusedList: [String],
                      exclusionSuffixes: [String]?,
                      queue: DispatchQueue?,
                      semaphore: DispatchSemaphore?,
                      completion: @escaping ([String]) -> ()) {
-
+        
         if let queue = queue {
             let lock = NSLock()
             scanPaths(dirs) { filepath in
@@ -307,7 +287,7 @@ public class ParserViaSourceKit: SourceParsing {
             queue.sync(flags: .barrier) {}
         }
     }
-
+    
     func checkUnused(_ filepath: String,
                      unusedList: [String],
                      exclusionSuffixes: [String]?,
@@ -330,7 +310,7 @@ public class ParserViaSourceKit: SourceParsing {
             log(error.localizedDescription)
         }
     }
-
+    
     func updateTests(dirs: [String],
                      unusedMap: [String: Val],
                      queue: DispatchQueue?,
@@ -353,18 +333,18 @@ public class ParserViaSourceKit: SourceParsing {
             queue.sync(flags: .barrier) {}
         }
     }
-
+    
     func updateTest(_ path: String,
                     unusedMap: [String: Val],
                     lock: NSLock?,
                     completion: @escaping (Data, URL, Int, Bool) -> ()) {
-
+        
         guard path.hasSuffix("Tests.swift") || path.hasSuffix("Test.swift") else { return }
-
+        
         guard var content = FileManager.default.contents(atPath: path) else {
             fatalError("Retrieving contents of \(path) failed")
         }
-
+        
         do {
             let topstructure = try Structure(path: path)
             var toDelete = [String: (Int, Int)]()
@@ -386,7 +366,7 @@ public class ParserViaSourceKit: SourceParsing {
                     testname = String(testname.dropLast("Test".count))
                     declsInFile += 1
                 }
-
+                
                 if let _ = unusedMap[testname] {
                     // 1. if it's the test name
                     //if v.path.module == path.module { // TODO: need this?
@@ -396,7 +376,7 @@ public class ParserViaSourceKit: SourceParsing {
                     //}
                 } else {
                     //                    print("IN body: ", current.name, testname)
-
+                    
                     // 2. if it's within the test body as var decls, func bodies, exprs, return val, etc.
                     // Then remove the whole function or class using it
                     // let x = UnusedClass()  <--- removing this requires removing occurrences of x (or expr itself) or replacing it with a subsitution everywhere.
@@ -404,15 +384,15 @@ public class ParserViaSourceKit: SourceParsing {
                     updateBody(current, unusedMap: unusedMap, content: &content)
                 }
             }
-
+            
             let shouldDelete = deleteCount > 0 && declsInFile == deleteCount
-
+            
             if !shouldDelete {
                 for (k, v) in toDelete {
                     replace(&content, start: v.0, end: v.1, with: space)
                 }
             }
-
+            
             let url = URL(fileURLWithPath: path)
             lock?.lock()
             completion(content, url, deleteCount, shouldDelete)
@@ -421,7 +401,7 @@ public class ParserViaSourceKit: SourceParsing {
             fatalError(error.localizedDescription)
         }
     }
-
+    
     private func replace(_ content: inout Data, start: Int, end: Int, with another: UInt8) {
         if start > 0, end > start {
             let anotherData = Data(repeating: another, count: end-start)
@@ -429,7 +409,7 @@ public class ParserViaSourceKit: SourceParsing {
             content.replaceSubrange(range, with: anotherData)
         }
     }
-
+    
     private func updateBody(_ current: Structure,
                             unusedMap: [String: Val],
                             content: inout Data) {
@@ -448,7 +428,7 @@ public class ParserViaSourceKit: SourceParsing {
             updateBody(sub, unusedMap: unusedMap, content: &content)
         }
     }
-
+    
     private func parseContent(content: Data, start: Int, end: Int) -> [String] {
         guard start > 0, end > start else { return [] }
         let range = start..<end
@@ -463,35 +443,35 @@ public class ParserViaSourceKit: SourceParsing {
         }
         return []
     }
-
-
+    
+    
     private func gatherUsedDecls(_ current: Structure, results: inout [String]) {
         for sub in current.substructures {
             if sub.kind == SwiftDeclarationKind.genericTypeParam.rawValue {
                 results.append(contentsOf: sub.name.typeComponents)
             }
-
+            
             if sub.kind == "source.lang.swift.decl.var.parameter" {
                 results.append(contentsOf: sub.typeName.typeComponents)
             }
-
+            
             if sub.kind == "source.lang.swift.expr.call" {
                 results.append(contentsOf: sub.name.typeComponents)
             }
-
+            
             if sub.isVariable || sub.kind == "source.lang.swift.decl.var.local", sub.typeName != .unknownVal {
                 results.append(contentsOf: sub.typeName.typeComponents)
             }
-
+            
             if sub.isMethod || sub.kind == "source.lang.swift.decl.function.method.class", !(sub.typeName == .unknownVal || sub.typeName.isEmpty || sub.typeName == "Void") {
                 results.append(contentsOf: sub.typeName.typeComponents)
             }
-
+            
             gatherUsedDecls(sub, results: &results)
         }
     }
-
-
+    
+    
     public func stats(dirs: [String],
                       exclusionSuffixes: [String]? = nil,
                       completion: @escaping (Int, Int) -> ()) {
@@ -509,12 +489,12 @@ public class ParserViaSourceKit: SourceParsing {
                         kcount += 1
                     }
                 }
-
+                
                 completion(pcount, kcount)
             } catch {
                 fatalError()
             }
         }
     }
-
+    
 }

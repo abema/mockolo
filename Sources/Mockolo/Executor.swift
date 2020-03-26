@@ -130,9 +130,16 @@ class Executor {
         let climit = 12
 
         
-        let x = 1
-
-        if x == 0 {
+        let x = -1
+        if x == -1 {
+            let dirs = ["/Users/ellie/Developer/mockolo/Samples"]
+            staticNumThreads = 1
+            dceImports(sourceDirs: dirs,
+                       exclusionSuffixes: xlist2,
+                       exclusionSuffixesForUsed: nil,
+                       outputFilePath: op,
+                       concurrencyLimit: climit)
+        } else if x == 0 {
             dce(sourceDirs: dirs,
                 exclusionSuffixes: xlist2,
                 exclusionSuffixesForUsed: nil,

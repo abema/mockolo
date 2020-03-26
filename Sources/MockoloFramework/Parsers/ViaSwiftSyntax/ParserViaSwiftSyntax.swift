@@ -147,4 +147,28 @@ public class ParserViaSwiftSyntax: SourceParsing {
             }
         }
     }
+    
+    
+    func scanDecls(dirs: [String],
+                   exclusionSuffixes: [String]? = nil,
+                   completion: @escaping (Int) -> ()) {
+        utilScan(dirs: dirs) { (path: String, lock: NSLock?) in
+            guard path.shouldParse(with: exclusionSuffixes) else { return }
+            do {
+                var results = [String: Val]()
+                var k = 0
+                let node = try SyntaxParser.parse(path)
+                var visitor = DeclVisitor()
+                node.walk(&visitor)
+                
+                lock?.lock()
+                defer {lock?.unlock()}
+                completion(k)
+            } catch {
+                fatalError(error.localizedDescription)
+            }
+        }
+    }
+    
+    
 }

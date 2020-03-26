@@ -16,14 +16,6 @@
 
 import Foundation
 
-//public typealias Loc = (name: String, docLoc: (Int, Int))
-//public struct Entry {
-//    var path: String
-//    var module: String
-//    var parents: [String]
-//    var docLoc: (Int, Int)
-//}
-
 
 /*
  
@@ -37,25 +29,6 @@ import Foundation
  Fourth, go through unused_map, remove class decl for each entry.
  
  */
-
-final public class Val {
-    let path: String
-    let parents: [String]
-    let start: Int
-    let end: Int
-    var used = false
-    public init(path: String,
-                parents: [String],
-                start: Int,
-                end: Int,
-                used: Bool) {
-        self.path = path
-        self.parents = parents
-        self.start = start
-        self.end = end
-        self.used = used
-    }
-}
 
 
 public func dce(sourceDirs: [String],
@@ -139,11 +112,9 @@ public func dce(sourceDirs: [String],
     
     log("Save results...")
     if let outputFilePath = outputFilePath {
-//        let declared = results.map {"\($0.key): \($0.value)"}.joined(separator: "\n")
         let used = usedMap.map {"\($0.key)"}.joined(separator: ", ")
         let ret = unusedMap.map {"\($0.key): \($0.value.path)"}.joined(separator: "\n")
 
-//        try? declared.write(toFile: filepath+"-decl", atomically: true, encoding: .utf8)
         try? used.write(toFile: outputFilePath+"-used", atomically: true, encoding: .utf8)
         try? ret.write(toFile: outputFilePath+"-ret", atomically: true, encoding: .utf8)
         log(" to ", outputFilePath)
