@@ -27,7 +27,7 @@ extension SyntaxParser {
     }
 }
 
-extension Syntax {
+extension SyntaxProtocol {
     var offset: Int64 {
         return Int64(self.position.utf8Offset)
     }
