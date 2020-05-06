@@ -21,6 +21,10 @@ enum InputError: Error {
     case sourceFilesError
 }
 
+enum OutputError: Error {
+    case writeError(Error)
+}
+
 public enum ParserType {
     case swiftSyntax
     case sourceKit
@@ -143,11 +147,17 @@ public func generate(sourceDirs: [String]?,
                                 customImports: customImports,
                                 testableImports: testableImports)
 
-    let result = write(candidates: candidates,
-                       header: header,
-                       macro: macro,
-                       imports: imports,
-                       to: outputFilePath)
+    let result: String
+    do {
+        result = try write(candidates: candidates,
+                           header: header,
+                           macro: macro,
+                           imports: imports,
+                           to: outputFilePath)
+    } catch let error {
+        log("Failed to write output: " + error.localizedDescription, level: .error)
+        throw OutputError.writeError(error)
+    }
     signpost_end(name: "Write results")
     let t5 = CFAbsoluteTimeGetCurrent()
     log("Took", t5-t4, level: .verbose)

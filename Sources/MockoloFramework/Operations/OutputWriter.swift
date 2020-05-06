@@ -21,7 +21,7 @@ func write(candidates: [(String, Int64)],
            header: String?,
            macro: String?,
            imports: String,
-           to outputFilePath: String) -> String {
+           to outputFilePath: String) throws -> String {
 
     let entities = candidates
         .sorted { (left: (String, Int64), right: (String, Int64)) -> Bool in
@@ -41,7 +41,7 @@ func write(candidates: [(String, Int64)],
     }
     let ret = [headerStr, macroStart, imports, entities.joined(separator: "\n"), macroEnd].joined(separator: "\n\n")
     
-    _ = try? ret.write(toFile: outputFilePath, atomically: true, encoding: .utf8)
+    _ = try ret.write(toFile: outputFilePath, atomically: true, encoding: .utf8)
     return ret
 }
 
